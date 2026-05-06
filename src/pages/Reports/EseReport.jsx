@@ -1,0 +1,133 @@
+import React, { useEffect, useState, useMemo } from "react";
+import axios from "axios";
+import * as XLSX from "xlsx";
+import "../../css/EseReport.css";
+import EseReportTable from "../../components/EseReport/EseReportTable";
+import EseReportFilters from "../../components/EseReport/EseReportFilters";
+import EseReportHeader from "../../components/EseReport/EseReportHeader";
+import Loading from '../../assets/load.svg';
+
+function EseReport() {
+
+    const apiUrl = import.meta.env.VITE_API_URL;
+    const [loading, setLoading] = useState(true);
+    const [courseCode, setCourseCode] = useState([]);
+    const [searchTerm, setSearchTerm] = useState("");
+    const [showFilters, setShowFilters] = useState(false);
+    const [filterCourseCode, setFilterCourseCode] = useState("");
+    const [filterStatus, setFilterStatus] = useState("");
+    const [page, setPage] = useState(1);
+    const pageSize = 100;
+
+    useEffect(() => {
+        const fetchEseData = async () => {
+            try {
+                const response = await axios.get(`${apiUrl}/api/esereport`);
+                const sortedCourses = response.data.courses.sort((a, b) =>
+                    a.course_code.localeCompare(b.course_code)
+                );
+                setCourseCode(sortedCourses);
+            } catch (err) {
+                console.error("Error fetching ESE report data : ", err);
+            } finally { setLoading(false) }
+        };
+        fetchEseData();
+    }, [apiUrl]);
+
+    const filteredCourses = useMemo(() => {
+        return courseCode.filter((item) => {
+            const matchesSearch =
+                item.course_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                item.course_title.toLowerCase().includes(searchTerm.toLowerCase());
+            const matchesCourseCode =
+                !filterCourseCode || item.course_code === filterCourseCode;
+            const normalizedStatus = item.status ? item.status.toLowerCase() : "incomplete";
+            const matchesStatus =
+                !filterStatus || normalizedStatus === filterStatus.toLowerCase();
+            return matchesSearch && matchesCourseCode && matchesStatus;
+        })
+    }, [courseCode, searchTerm, filterCourseCode, filterStatus]);
+
+
+    const totalPages = Math.ceil(filteredCourses.length / pageSize);
+
+    const handleSearch = (value) => {
+        setSearchTerm(value);
+        setPage(1);
+    };
+
+    const clearAllFilters = () => {
+        setFilterCourseCode("");
+        setFilterStatus("");
+        setPage(1);
+    };
+
+    const handleDownload = () => {
+        const worksheetData = filteredCourses.map((course) => ({
+            "Course Code": course.course_code,
+            "Course Title": course.course_title,
+            Status: course.status || "Incomplete",
+        }));
+
+        const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "ESE Report");
+        XLSX.writeFile(workbook, "Ese Report.xlsx");
+    };
+
+    const getStatusColor = (statusText) => {
+        switch (statusText) {
+            case "Complete":
+                return { color: "green" };
+            case "Pending":
+                return { color: "#ff9900" };
+            default:
+                return { color: "red" };
+        }
+    };
+
+    if (loading) return (
+        <div>
+            <center>
+                <img src={Loading} alt="Loading spinner" className="img" />
+            </center>
+        </div>
+    )
+
+    return (
+
+        <div className="ese-repo-main">
+
+            <EseReportHeader
+                searchText={searchTerm}
+                handleSearch={handleSearch}
+                handleDownload={handleDownload}
+                setShowFilters={setShowFilters}
+            />
+
+            <EseReportFilters
+                showFilters={showFilters}
+                clearAllFilters={clearAllFilters}
+                filterCourseCode={filterCourseCode}
+                setFilterCourseCode={setFilterCourseCode}
+                filterStatus={filterStatus}
+                setFilterStatus={setFilterStatus}
+                courseCodeOptions={courseCode.map((c) => ({
+                    value: c.course_code,
+                    label: `${c.course_code} - ${c.course_title}`,
+                }))}
+            />
+
+            <EseReportTable
+                courseCode={filteredCourses}
+                page={page}
+                pageSize={pageSize}
+                totalPages={totalPages}
+                setPage={setPage}
+                getStatusColor={getStatusColor}
+            />
+        </div>
+    )
+}
+
+export default EseReport;
